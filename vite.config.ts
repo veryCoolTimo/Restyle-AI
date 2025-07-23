@@ -10,11 +10,18 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'index.html'),
-        options: resolve(__dirname, 'public/options.html'),
-        // popup: resolve(__dirname, 'public/popup.html'), // позже добавим
+        popup: resolve(__dirname, 'popup.html'),
+        background: resolve(__dirname, 'src/background/service_worker.ts'),
+      },
+      output: {
+        entryFileNames: chunk => {
+          if (chunk.name === 'background') return 'background/service_worker.js';
+          return '[name].js';
+        },
       },
     },
+    outDir: 'dist',
+    emptyOutDir: true,
   },
   resolve: {
     alias: {

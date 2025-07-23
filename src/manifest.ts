@@ -7,13 +7,13 @@ const manifest = {
   version: '0.1.0',
   description: 'AI-стилизация сайтов через OpenAI GPT',
   action: {
-    default_popup: 'popup/index.html',
+    default_popup: 'popup.html',
   },
   background: {
-    service_worker: 'background/service_worker.js',
+    service_worker: 'src/background/service_worker.js',
     type: 'module',
   },
-  options_page: 'options/index.html',
+  // options_page: 'options.html',
   permissions: [
     'storage',
     'scripting',
