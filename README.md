@@ -77,4 +77,3 @@ export default tseslint.config([
 ---
 
 ✅ Шаг 4: реализована options-страница для ввода и хранения OpenAI API-ключа через chrome.storage.local. Компонент Options подключён к options.html, сборка через Vite.
-# Restyle-AI
