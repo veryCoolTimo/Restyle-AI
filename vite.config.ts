@@ -8,18 +8,6 @@ import { resolve } from 'path';
 export default defineConfig({
   plugins: [react(), crx({ manifest })],
   build: {
-    rollupOptions: {
-      input: {
-        popup: resolve(__dirname, 'popup.html'),
-        background: resolve(__dirname, 'src/background/service_worker.ts'),
-      },
-      output: {
-        entryFileNames: chunk => {
-          if (chunk.name === 'background') return 'background/service_worker.js';
-          return '[name].js';
-        },
-      },
-    },
     outDir: 'dist',
     emptyOutDir: true,
   },

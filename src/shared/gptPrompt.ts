@@ -11,6 +11,7 @@ export const SYSTEM_PROMPT = `Ты движок. На входе HTML (без sc
 • css — должна работать без inline-стилей (CSP-дружелюбно).
 • patches — максимум 30 шт., каждая ≤ 500 символов.`;
 
+
 export interface GptStyleResult {
   css: string;
   patches: Array<{

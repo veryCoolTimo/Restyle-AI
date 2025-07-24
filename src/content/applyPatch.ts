@@ -5,25 +5,18 @@ const chrome = (window as any).chrome;
 
 let styleId = 'gpt-styler';
 let appliedPatches: { selector: string; replace: string; outer?: boolean }[] = [];
+let appliedCss = '';
 let observer: MutationObserver | null = null;
 
 function insertCss(css: string) {
-  // CSP-friendly: используем insertCSS, но для content-script fallback — <style>
-  if (chrome?.scripting && chrome.runtime?.id) {
-    chrome.scripting.insertCSS({
-      target: { tabId: chrome.devtools?.inspectedWindow?.tabId || 0 },
-      css,
-      id: styleId,
-    });
-  } else {
-    let style = document.getElementById(styleId) as HTMLStyleElement | null;
-    if (!style) {
-      style = document.createElement('style');
-      style.id = styleId;
-      document.head.appendChild(style);
-    }
-    style.textContent = css;
+  // Content script fallback — <style> элемент в head
+  let style = document.getElementById(styleId) as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement('style');
+    style.id = styleId;
+    document.head.appendChild(style);
   }
+  style.textContent = css;
 }
 
 function removeCss() {
@@ -54,7 +47,7 @@ function applyPatches(patches: typeof appliedPatches) {
 function observeSpa(patches: typeof appliedPatches) {
   if (observer) observer.disconnect();
   observer = new MutationObserver(() => {
-    insertCss((document.getElementById(styleId) as HTMLStyleElement)?.textContent || '');
+    insertCss(appliedCss);
     applyPatches(patches);
   });
   observer.observe(document.body, { childList: true, subtree: true });
@@ -66,22 +59,34 @@ function undo() {
 }
 
 chrome?.runtime?.onMessage.addListener((msg: unknown, sender: unknown, sendResponse: (resp: any) => void) => {
-  if (ApplyPatchSchema.safeParse(msg).success) {
-    const { css, patches } = msg as { css: string; patches?: typeof appliedPatches };
-    insertCss(css);
-    if (patches) {
-      appliedPatches = patches;
-      const failed = applyPatches(patches);
-      observeSpa(patches);
-      sendResponse({ type: 'ack', success: failed.length === 0, error: failed.length ? failed.join(',') : undefined });
-    } else {
-      sendResponse({ type: 'ack', success: true });
+  try {
+    if (ApplyPatchSchema.safeParse(msg).success) {
+      const { css, patches } = msg as { css: string; patches?: typeof appliedPatches };
+      appliedCss = css; // Сохраняем CSS для MutationObserver
+      insertCss(css);
+      if (patches) {
+        appliedPatches = patches;
+        const failed = applyPatches(patches);
+        observeSpa(patches);
+        sendResponse({ type: 'ack', success: failed.length === 0, error: failed.length ? failed.join(',') : undefined });
+      } else {
+        sendResponse({ type: 'ack', success: true });
+      }
+      return true;
     }
-    return true;
+    if ((msg as any)?.type === 'undo') {
+      undo();
+      sendResponse({ type: 'ack', success: true });
+      return true;
+    }
+  } catch (error) {
+    console.error('ApplyPatch error:', error);
+    sendResponse({ type: 'ack', success: false, error: 'Internal error' });
   }
-  if ((msg as any)?.type === 'undo') {
-    undo();
-    sendResponse({ type: 'ack', success: true });
-    return true;
-  }
-}); 
+  return false;
+});
+
+// Сигнализируем что content script загружен
+if (typeof window !== 'undefined') {
+  window.postMessage({ type: 'GPT_STYLER_CONTENT_READY' }, '*');
+} 

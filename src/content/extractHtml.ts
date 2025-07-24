@@ -33,10 +33,21 @@ function extractHtml(): string {
 
 // Слушаем сообщения
 chrome?.runtime?.onMessage.addListener((msg: unknown, sender: unknown, sendResponse: (resp: HtmlResponse) => void) => {
-  if (RequestHtmlSchema.safeParse(msg).success) {
-    const html = extractHtml();
-    const response: HtmlResponse = { type: 'html', html };
-    sendResponse(response);
-    return true; // async
+  try {
+    if (RequestHtmlSchema.safeParse(msg).success) {
+      const html = extractHtml();
+      const response: HtmlResponse = { type: 'html', html };
+      sendResponse(response);
+      return true; // async
+    }
+  } catch (error) {
+    console.error('ExtractHtml error:', error);
+    sendResponse({ type: 'html', html: '' });
   }
-}); 
+  return false;
+});
+
+// Сигнализируем что content script загружен
+if (typeof window !== 'undefined') {
+  window.postMessage({ type: 'GPT_STYLER_CONTENT_READY' }, '*');
+} 

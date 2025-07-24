@@ -10,10 +10,16 @@ const manifest = {
     default_popup: 'popup.html',
   },
   background: {
-    service_worker: 'src/background/service_worker.js',
+    service_worker: 'src/background/service_worker.ts',
     type: 'module',
   },
-  // options_page: 'options.html',
+  options_page: 'options.html',
+  content_scripts: [
+    {
+      matches: ['<all_urls>'],
+      js: ['src/content/extractHtml.ts', 'src/content/applyPatch.ts'],
+    }
+  ],
   permissions: [
     'storage',
     'scripting',

@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && web-ext build --source-dir=dist --artifacts-dir=dist",
     "test": "vitest run",
-    "lint": "eslint .",
+    "lint": "eslint src --ext .ts,.tsx",
+    "type": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
