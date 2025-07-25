@@ -18,6 +18,7 @@ export const StyleRequestSchema = z.object({
   type: z.literal('style'),
   html: z.string(),
   styleName: z.string(),
+  tabId: z.number().optional(),
 });
 export type StyleRequest = z.infer<typeof StyleRequestSchema>;
 

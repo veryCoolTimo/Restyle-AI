@@ -60,6 +60,12 @@ function undo() {
 
 chrome?.runtime?.onMessage.addListener((msg: unknown, sender: unknown, sendResponse: (resp: any) => void) => {
   try {
+    // Проверка готовности content script
+    if ((msg as any)?.type === 'ping') {
+      sendResponse({ type: 'pong' });
+      return true;
+    }
+    
     if (ApplyPatchSchema.safeParse(msg).success) {
       const { css, patches } = msg as { css: string; patches?: typeof appliedPatches };
       appliedCss = css; // Сохраняем CSS для MutationObserver

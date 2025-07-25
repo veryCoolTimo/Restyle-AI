@@ -36,30 +36,70 @@ const Popup: React.FC = () => {
     localStorage.setItem('gpt-styler-history', JSON.stringify(newHistory));
   };
 
+  // Helper: проверяем ping, при необходимости инжектим content scripts (до 5 попыток)
+  const ensureContentScripts = async (tabId: number): Promise<void> => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const ok = await new Promise<boolean>((resolve) => {
+        chrome.tabs.sendMessage(tabId, { type: 'ping' }, () => {
+          resolve(!chrome.runtime.lastError);
+        });
+      });
+      if (ok) return;
+      try {
+        await chrome.scripting.executeScript({ target: { tabId }, files: ['assets/extractHtml-standalone.js'] });
+        await chrome.scripting.executeScript({ target: { tabId }, files: ['assets/applyPatch-standalone.js'] });
+      } catch { /* ignore, may already be injected */ }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    throw new Error('Content script не загружен. Перезагрузите страницу.');
+  };
+
   const handleApply = async () => {
+    if (!style.trim()) {
+      setError('Введите название стиля');
+      return;
+    }
+    
+    if (status !== 'idle') {
+      console.log('⚠️ [POPUP] Already processing, ignoring request');
+      return;
+    }
+    
     setStatus('analyzing');
     setError(null);
     
     try {
+      console.log('🚀 [POPUP] Starting handleApply...');
+      
       const tabs = await new Promise<any[]>((resolve) => {
         chrome.tabs?.query({ active: true, currentWindow: true }, resolve);
       });
       
       const tabId = tabs[0]?.id;
+      console.log('📋 [POPUP] Active tab ID:', tabId);
+      
       if (!tabId) {
+        console.error('❌ [POPUP] No active tab found');
         setError('Активная вкладка не найдена');
         setStatus('idle');
         return;
       }
 
-      // Проверяем готовность content script с timeout
+      // Убеждаемся, что content scripts готовы
+      await ensureContentScripts(tabId);
+
+      // Запрашиваем HTML напрямую через content script
+      console.log('📄 [POPUP] Requesting HTML from content script...');
       const resp = await new Promise<any>((resolve, reject) => {
         const timeout = setTimeout(() => {
+          console.error('❌ [POPUP] HTML request timeout');
           reject(new Error('Content script не отвечает. Попробуйте перезагрузить страницу.'));
-        }, 5000);
+        }, 10000);
 
         chrome.tabs.sendMessage(tabId, { type: 'requestHtml' }, (response: any) => {
           clearTimeout(timeout);
+          console.log('📄 [POPUP] HTML response:', response?.html?.length, 'chars, lastError:', chrome.runtime.lastError);
+          
           if (chrome.runtime.lastError) {
             reject(new Error('Content script не загружен. Перезагрузите страницу.'));
           } else {
@@ -69,20 +109,26 @@ const Popup: React.FC = () => {
       });
 
       if (!resp?.html) {
+        console.error('❌ [POPUP] No HTML received from content script');
         setError('Не удалось получить HTML со страницы');
         setStatus('idle');
         return;
       }
 
+      console.log('✅ [POPUP] HTML received, length:', resp.html.length);
       setStatus('applying');
       
+      console.log('🤖 [POPUP] Sending to background for OpenAI processing...');
       const progress = await new Promise<any>((resolve, reject) => {
         const timeout = setTimeout(() => {
+          console.error('❌ [POPUP] OpenAI request timeout');
           reject(new Error('Таймаут запроса к OpenAI'));
-        }, 30000);
+        }, 60000);
 
-        chrome.runtime.sendMessage({ type: 'style', html: resp.html, styleName: style }, (response: any) => {
+        chrome.runtime.sendMessage({ type: 'style', tabId, html: resp.html, styleName: style }, (response: any) => {
           clearTimeout(timeout);
+          console.log('🤖 [POPUP] Background response:', response, 'lastError:', chrome.runtime.lastError);
+          
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
           } else {
@@ -92,17 +138,21 @@ const Popup: React.FC = () => {
       });
 
       if (progress?.error) {
+        console.error('❌ [POPUP] Background processing error:', progress.error);
         setError(progress.error);
         setStatus('idle');
       } else if (progress?.message === 'done') {
+        console.log('✅ [POPUP] Styling completed successfully');
         setStatus('done');
-        const tokens = Math.round((resp.html.length + 2000) / 4);
-        const price = tokens * 0.00001;
+        const inputTokens = Math.round(resp.html.length / 4);
+        const outputTokens = 500; // примерная оценка JSON ответа
+        const price = (inputTokens * 0.0025 + outputTokens * 0.01) / 1000;
         setCost(price);
         saveHistory({ style, date: new Date().toISOString(), cost: price });
         setTimeout(() => setStatus('idle'), 3000);
       }
     } catch (error: any) {
+      console.error('❌ [POPUP] Handle apply error:', error);
       setError(error.message || 'Неизвестная ошибка');
       setStatus('idle');
     }
@@ -110,20 +160,30 @@ const Popup: React.FC = () => {
 
   const handleUndo = async () => {
     try {
+      console.log('↩️ [POPUP] Starting handleUndo...');
+      
       const tabs = await new Promise<any[]>((resolve) => {
         chrome.tabs?.query({ active: true, currentWindow: true }, resolve);
       });
       
       const tabId = tabs[0]?.id;
+      console.log('📋 [POPUP] Undo tab ID:', tabId);
       if (!tabId) return;
 
+      // Убеждаемся, что content scripts готовы
+      await ensureContentScripts(tabId);
+
+      console.log('↩️ [POPUP] Sending undo message...');
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
+          console.error('❌ [POPUP] Undo timeout');
           reject(new Error('Content script не отвечает'));
-        }, 3000);
+        }, 5000);
 
         chrome.tabs.sendMessage(tabId, { type: 'undo' }, (response: any) => {
           clearTimeout(timeout);
+          console.log('↩️ [POPUP] Undo response:', response, 'lastError:', chrome.runtime.lastError);
+          
           if (chrome.runtime.lastError) {
             reject(new Error('Content script не загружен'));
           } else {
@@ -131,8 +191,9 @@ const Popup: React.FC = () => {
           }
         });
       });
+      console.log('✅ [POPUP] Undo completed');
     } catch (error) {
-      console.error('Undo failed:', error);
+      console.error('❌ [POPUP] Undo failed:', error);
     }
   };
 

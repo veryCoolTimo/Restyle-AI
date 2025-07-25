@@ -5,13 +5,11 @@ export async function fetchGptStyle({
   apiKey,
   html,
   styleName,
-  onPartial,
 }: {
   apiKey: string;
   html: string;
   styleName: string;
-  onPartial?: (partial: string) => void;
-}): Promise<string> {
+}): Promise<GptStyleResult> {
   const url = 'https://api.openai.com/v1/chat/completions';
   const headers = {
     'Content-Type': 'application/json',
@@ -19,7 +17,7 @@ export async function fetchGptStyle({
   };
   const body = JSON.stringify({
     model: 'gpt-4o',
-    stream: true,
+    stream: false,
     temperature: 0.2,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
@@ -27,32 +25,43 @@ export async function fetchGptStyle({
     ],
   });
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body,
-  });
-  if (!response.body) throw new Error('No stream');
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let result = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value);
-    result += chunk;
-    onPartial?.(result);
-    // Можно добавить парсинг SSE и остановку по закрывающей скобке JSON
+  const resp = await fetch(url, { method: 'POST', headers, body });
+  if (!resp.ok) {
+    throw new Error(`OpenAI error: ${resp.status}`);
   }
-  return result;
+  const data = await resp.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('No content in OpenAI response');
+  }
+  const parsed = parseGptStyleResult(content);
+  if (!parsed) throw new Error('Invalid JSON from OpenAI');
+  return parsed;
 }
 
 // Парсер результата (строго JSON)
-export function parseGptStyleResult(json: string): GptStyleResult | null {
+export function parseGptStyleResult(raw: string): GptStyleResult | null {
   try {
-    return JSON.parse(json) as GptStyleResult;
-  } catch {
+    let jsonStr = raw.trim();
+    // Убираем markdown-блоки ```json ... ```
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```[a-zA-Z]*[\r\n]+/u, '').replace(/```\s*$/u, '').trim();
+    }
+    // Дополнительно оставляем только часть от первой { до последней }
+    const first = jsonStr.indexOf('{');
+    const last = jsonStr.lastIndexOf('}');
+    if (first !== -1 && last !== -1) {
+      jsonStr = jsonStr.slice(first, last + 1);
+    }
+
+    const parsed = JSON.parse(jsonStr);
+    if (!parsed || typeof parsed.css !== 'string' || !parsed.css.trim()) {
+      console.error('❌ [PARSE] Missing or empty css field');
+      return null;
+    }
+    return parsed as GptStyleResult;
+  } catch (error) {
+    console.error('❌ [PARSE] JSON parse error:', error);
     return null;
   }
 } 

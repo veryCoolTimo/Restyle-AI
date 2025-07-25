@@ -14,12 +14,7 @@ const manifest = {
     type: 'module',
   },
   options_page: 'options.html',
-  content_scripts: [
-    {
-      matches: ['<all_urls>'],
-      js: ['src/content/extractHtml.ts', 'src/content/applyPatch.ts'],
-    }
-  ],
+  // content_scripts будут внедряться программно через background script
   permissions: [
     'storage',
     'scripting',
