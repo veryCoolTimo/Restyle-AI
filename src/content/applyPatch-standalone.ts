@@ -34,16 +34,27 @@ function applyPatches(patches: typeof appliedPatches) {
   const failed: string[] = [];
   patches.forEach(({ selector, replace, outer }) => {
     try {
+      if (outer && /^(body|html)$/i.test(selector.trim())) {
+        console.warn('⚠️ [APPLY] Skipping dangerous patch on', selector);
+        return;
+      }
       document.querySelectorAll(selector).forEach(el => {
         if (outer) {
           const temp = document.createElement('div');
           temp.innerHTML = replace;
           el.replaceWith(...temp.childNodes);
         } else {
-          (el as HTMLElement).innerHTML = replace;
+          // Для body добавляем в начало, а не заменяем содержимое
+          if (el.tagName.toLowerCase() === 'body') {
+            console.log('🎨 [APPLY] Adding to body start instead of replacing');
+            el.insertAdjacentHTML('afterbegin', replace);
+          } else {
+            (el as HTMLElement).innerHTML = replace;
+          }
         }
       });
-    } catch {
+    } catch (err) {
+      console.error('❌ [APPLY] Patch failed for', selector, err);
       failed.push(selector);
     }
   });
